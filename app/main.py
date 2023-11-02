@@ -1,11 +1,13 @@
-from typing import Optional
+from typing import Optional,List
 from fastapi import FastAPI, Response,status,HTTPException
-from fastapi.params  import Body
-from pydantic  import BaseModel
 import psycopg
 from psycopg.rows import dict_row
 import time
+from  .import schemas,config
+
 from fastapi.middleware.cors import CORSMiddleware
+
+
 
 
 app  =  FastAPI()
@@ -18,13 +20,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class Post(BaseModel):
-    title: str
-    content: str
-    published:bool = True 
+settings =  config.Settings()
+print(settings.db_password)
 while True:
      try: 
-         conn = psycopg.connect('host=localhost dbname=fastapi user=postgres  password=Kamsi&mark',
+         conn = psycopg.connect(f'host={settings.db_host} dbname={settings.db_name} user={settings.db_username} password={settings.db_password}',
                                 row_factory= dict_row
                                 )
          cursor =  conn.cursor()
@@ -42,12 +42,12 @@ my_posts =   [{"title:": "title of posts", "content":"A post", "id":1},
 def read_root():
     return {"message": "Welcome to my Program this is good"}
 
-@app.get("/posts")
-def get_posts():
-    cursor.execute("""SELECT * FROM posts""")
+@app.get("/posts",response_model= List[schemas.Post])
+def get_posts(limit: int = 5 ):
+    cursor.execute("""SELECT * FROM posts LIMIT %s""",(str(limit),))
     posts = cursor.fetchall()
     cursor.row_factory
-    return  {"data": posts}
+    return  posts
 
 """
 @app.post("/createposts")
@@ -55,20 +55,20 @@ def create_posts(payload: dict = Body(...)):
     print(payload)
     return {"message":"Sucessfully created post"}
 """
-@app.post("/posts", status_code= status.HTTP_201_CREATED)
-def create_posts(post: Post):
+@app.post("/posts", status_code=status.HTTP_201_CREATED,response_model= schemas.Post)
+def create_posts(post: schemas.PostCreate):
     cursor.execute("""INSERT INTO posts (title,content,published) VALUES (%s, %s, %s) RETURNING *""",(post.title,post.content,post.published)) 
     new_post =  cursor.fetchone()
     conn.commit()
-    return{"data" :new_post} 
+    return new_post 
 
-@app.get("/posts/{id}")
+@app.get("/posts/{id}", response_model= schemas.Post)
 def get_post(id: int):
     cursor.execute("""SELECT * FROM posts WHERE id = (%s)""",(str(id),))
     post = cursor.fetchone()
     if not post: 
         raise HTTPException(status_code= status.HTTP_404_NOT_FOUND,detail= f"""Post with an id of {id} not found""")
-    return  
+    return  post
 
 @app.delete("/posts/{id}",status_code=status.HTTP_204_NO_CONTENT)
 def delete_post(id:int):
@@ -79,8 +79,8 @@ def delete_post(id:int):
           raise HTTPException(status_code= status.HTTP_404_NOT_FOUND,detail= f"""Post with an id of {id} not found""")
      return Response(status_code= status.HTTP_204_NO_CONTENT)
 
-@app.put("/posts/{id}")
-def change_post(id:int, post:Post):
+@app.put("/posts/{id}", response_model= schemas.Post)
+def change_post(id:int, post:schemas.PostCreate):
      cursor.execute("""UPDATE posts SET title = (%s), content =  %s, published = %s WHERE id = %s RETURNING *""",(post.title,post.content,post.published, str(id)))
      post =  cursor.fetchone()
      conn.commit()
