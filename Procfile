@@ -1,1 +1,1 @@
-web: uvicorn app.main:app  %5000%
+web: uvicorn app.main:app 
